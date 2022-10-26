@@ -1,0 +1,1081 @@
+sed -i 's/old-text/new-text/g' input.txt
+
+redis.yml
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: redis
+  labels:
+    app: redis
+    type: backend
+spec:
+  containers:
+    - name: redis
+      image: redis
+---------------------------------
+
+cat replicaset-definition-1.yaml 
+
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  name: replicaset-1
+  labels:
+        tier: frontend
+spec:
+  template:
+    metadata:
+      name: app1
+      labels:
+        app: app1
+        type: front-end
+    spec:
+      containers:
+      - name: nginx
+        image: nginx
+  replicas: 2
+  selector:
+    matchLabels:
+      type: front-end
+
+-------------------------------------
+
+ cat replicaset-definition-2.yaml 
+
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  name: replicaset-2
+  labels:
+        tier: front-end
+spec:
+  template:
+    metadata:
+      name: app2
+      labels:
+        app: app2
+        type: front-end
+    spec:
+      containers:
+      - name: nginx
+        image: nginx
+  replicas: 2
+  selector:
+    matchLabels:
+      type: front-end
+
+
+kubectl scale --replicas=2 replicaset new-replica-set 
+
+------------------------
+
+kubectl get all
+
+deployment has same definition as replicaset except for kind. 
+
+Create an NGINX Pod
+
+kubectl run nginx --image=nginx
+
+Generate POD Manifest YAML file (-o yaml). Don't create it(--dry-run)
+
+kubectl run nginx --image=nginx --dry-run=client -o yaml
+
+Create a deployment
+
+kubectl create deployment --image=nginx nginxla
+
+Generate Deployment YAML file (-o yaml). Don't create it(--dry-run)
+
+kubectl create deployment --image=nginx nginx --dry-run=client -o yaml
+
+Generate Deployment YAML file (-o yaml). Don't create it(--dry-run) with 4 Replicas (--replicas=4)
+
+kubectl create deployment --image=nginx nginx --dry-run=client -o yaml > nginx-deployment.yaml
+
+Save it to a file, make necessary changes to the file (for example, adding more replicas) and then create the deployment.
+
+kubectl create -f nginx-deployment.yaml
+
+OR
+
+In k8s version 1.19+, we can specify the --replicas option to create a deployment with 4 replicas.
+
+kubectl create deployment --image=nginx nginx --replicas=4 --dry-run=client -o yaml > nginx-deployment.yaml
+
+---------------
+
+ cat deployment-definition-1.yaml 
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deployment-1
+  labels:
+    app: deployment-1
+    type: front-end
+spec:
+  template:
+    metadata:
+      name: deployment-1
+      labels: 
+        app: deployment-1 
+        type: front-end
+    spec:
+      containers:
+      - name: busybox-container
+        image: busybox888
+        command:
+        - sh
+        - "-c"
+        - echo Hello Kubernetes! && sleep 3600
+  replicas: 4
+  selector:
+    matchLabels:
+      type: front-end
+
+---------
+services:
+
+* node port
+* cluster IP
+* load balancer
+
+node port
+
+apiVersion: v1
+kind: Service
+metadata:
+    name: myapp-service
+
+spec:
+     type: NodePort
+     ports:
+      - targetPort: 80
+        port: 80
+        nodePort: 30008
+
+     selector:
+        app: myapp
+        type: front-end
+
+
+--------------
+
+it could be three pods on the same node or three pods on three different nodes.
+
+target port of pod :80
+port  of service : 80
+node port : 30008
+
+-----------------------------------------
+
+Cluster IP - service-definition.yml 
+
+apiVersion: v1
+kind: Service
+metadata:
+    name: back-end
+spec:
+   type: ClusterIP
+   ports:
+   - targetPort: 80
+     port: 80
+   selector:
+     app: myapp
+     type: back-end
+
+------------------------
+
+Load Balancer - service-definition.yml 
+
+apiVersion: v1
+kind: Service
+metadata:
+    name: myapp-service
+spec:
+   type: LoadBalancer
+   ports:
+   - targetPort: 80
+     port: 80
+     nodePort: 30008
+
+------------------------------
+
+creating a node port service
+
+controlplane ~ ➜  cat service-definition-1.yaml 
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: webapp-service
+spec:
+  type: NodePort
+  ports:
+    - targetPort: 8080
+      port: 8080
+      nodePort: 30080
+  selector:
+    name: simple-webapp
+
+--------------------
+
+namespaces 
+
+namespace-dev.yml
+
+apiVersion: v1
+kind: Namespace
+metadata: 
+    name: dev
+
+--------------------------
+kubectl create -f namespace-dev.yml
+kubectl create namespace dev
+
+kubectl config set-context $(kubectl config current-context) --namespace dev
+kubectl get pods --all-namespaces 
+
+--------------------------------
+
+Resource quota
+
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+    name: compute-quota
+    namespace: dev
+spec:
+  hard:
+    pods: "10"
+    requests.cpu: "4"
+    requests.memory: 5Gi
+    limits.cpu: "10"
+    limits.memory: 10Gi
+
+---------
+
+Use the above two in combination to generate a resource definition file quickly, that you can then modify and create resources as required, instead of creating the files from scratch.
+
+
+
+POD
+Create an NGINX Pod
+
+kubectl run nginx --image=nginx
+
+
+
+Generate POD Manifest YAML file (-o yaml). Don't create it(--dry-run)
+
+kubectl run nginx --image=nginx --dry-run=client -o yaml
+
+
+
+Deployment
+Create a deployment
+
+kubectl create deployment --image=nginx nginx
+
+
+
+Generate Deployment YAML file (-o yaml). Don't create it(--dry-run)
+
+kubectl create deployment --image=nginx nginx --dry-run=client -o yaml
+
+
+
+Generate Deployment with 4 Replicas
+
+kubectl create deployment nginx --image=nginx --replicas=4
+
+
+
+You can also scale a deployment using the kubectl scale command.
+
+kubectl scale deployment nginx --replicas=4
+
+Another way to do this is to save the YAML definition to a file and modify
+
+kubectl create deployment nginx --image=nginx --dry-run=client -o yaml > nginx-deployment.yaml
+
+
+
+You can then update the YAML file with the replicas or any other field before creating the deployment.
+
+
+
+Service
+Create a Service named redis-service of type ClusterIP to expose pod redis on port 6379
+
+kubectl expose pod redis --port=6379 --name redis-service --dry-run=client -o yaml
+
+(This will automatically use the pod's labels as selectors)
+
+Or
+
+kubectl create service clusterip redis --tcp=6379:6379 --dry-run=client -o yaml (This will not use the pods labels as selectors, instead it will assume selectors as app=redis. You cannot pass in selectors as an option. So it does not work very well if your pod has a different label set. So generate the file and modify the selectors before creating the service)
+
+
+
+Create a Service named nginx of type NodePort to expose pod nginx's port 80 on port 30080 on the nodes:
+
+kubectl expose pod nginx --type=NodePort --port=80 --name=nginx-service --dry-run=client -o yaml
+
+(This will automatically use the pod's labels as selectors, but you cannot specify the node port. You have to generate a definition file and then add the node port in manually before creating the service with the pod.)
+
+Or
+
+kubectl create service nodeport nginx --tcp=80:80 --node-port=30080 --dry-run=client -o yaml
+
+(This will not use the pods labels as selectors)
+
+Both the above commands have their own challenges. While one of it cannot accept a selector the other cannot accept a node port.
+ I would recommend going with the kubectl expose command. If you need to specify a node port, generate a definition file using the same command and manually input the nodeport before creating the service.
+
+Reference:
+https://kubernetes.io/docs/reference/generated/kubectl/kubectl-commands
+
+https://kubernetes.io/docs/reference/kubectl/conventions/=
+
+
+--------------------
+
+
+kubectl get pods --selector=tier=frontend --selector=bu
+kubectl get pods --selector env=prod,bu=finance,tier=frontend
+
+
+controlplane ~ ➜  cat replicaset-definition-1.yaml 
+
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+   name: replicaset-1
+spec:
+   replicas: 2
+   selector:
+      matchLabels:
+        tier: front-end
+   template:
+     metadata:
+       labels:
+        tier: front-end 
+     spec:
+       containers:
+       - name: nginx
+         image: nginx
+
+------
+
+taints and tolerations
+
+kubectl taint nodes node-name key=value:taint-effect [noSchedule,PreferNoSchedule,NoExecute]
+
+pod-definition.yml
+
+apiVersion: v1
+kind: Pod
+metadata:
+ name: myapp-pod
+spec:
+  containers:
+  - name: nginx-container
+    image: nginx
+  tolerations:
+  - key: app
+    operator: "Equal"
+    value: "Blue"
+    effect: "NoSchedule"
+
+
+kubectl describe node kubemaster | grep Taint
+kubectl taint nodes node01 spray=mortein:NoSchedul
+
+
+
+bee.yaml
+
+controlplane ~ ➜  cat bee.yaml 
+apiVersion: v1
+kind: Pod
+metadata:
+  creationTimestamp: null
+  labels:
+    run: bee
+  name: bee
+spec:
+  containers:
+  - image: nginx
+    name: bee
+    resources: {}
+  tolerations: 
+  - key: spray
+    operator: "Equal"
+    value: "mortein"
+    effect: "NoSchedule"
+  dnsPolicy: ClusterFirst
+  restartPolicy: Always
+status: {}
+
+------
+
+
+add a hyphen to remove taint from node
+kubectl taint nodes controlplane node-role.kubernetes.io/master:NoSchedule-
+
+-------------
+
+node selector 
+
+kubectl label nodes node-name label-key=label-value
+kubectl label nodes node-1 size=Large
+
+its limited so we use node affinity
+
+node affinity types
+
+Available
+1.requiredDuringSchedulingIgnoredDuringExecution
+2.preferredDuringSchedulingIgnoredDuringExecution
+
+Planned:
+1.requiredDuringSchedulingRequiredDuringExecution
+
+
+
+Name: blue
+
+Replicas: 3
+
+Image: nginx
+
+NodeAffinity: requiredDuringSchedulingIgnoredDuringExecution
+
+Key: color
+
+value: blue
+
+
+
+spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: color
+                operator: In
+                values:
+                - blue
+
+
+
+Name: red
+
+Replicas: 2
+
+Image: nginx
+
+NodeAffinity: requiredDuringSchedulingIgnoredDuringExecution
+
+Key: node-role.kubernetes.io/control-plane
+
+Use the right operator
+
+
+spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: In
+                values:
+                - controlplane
+
+----------
+
+
+n the previous lecture, I said - "When a pod is created the containers are assigned a default CPU request of .5 and memory of 256Mi".
+ For the POD to pick up those defaults you must have first set those as default values for request and limit by creating a LimitRange in that namespace.
+
+
+
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: mem-limit-range
+spec:
+  limits:
+  - default:
+      memory: 512Mi
+    defaultRequest:
+      memory: 256Mi
+    type: Container
+https://kubernetes.io/docs/tasks/administer-cluster/manage-resources/memory-default-namespace/
+
+
+
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: cpu-limit-range
+spec:
+  limits:
+  - default:
+      cpu: 1
+    defaultRequest:
+      cpu: 0.5
+    type: Container
+https://kubernetes.io/docs/tasks/administer-cluster/manage-resources/cpu-default-namespace/
+
+
+
+References:
+
+https://kubernetes.io/docs/tasks/configure-pod-container/assign-memory-resource
+
+-----
+
+practice memory and cpu limits on 
+https://killercoda.com/playgrounds/scenario/cka
+https://kubernetes.io/docs/tasks/administer-cluster/manage-resources/cpu-default-namespace/
+
+kubectl create namespace default-cpu-example
+
+Limit Range example
+
+
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: cpu-limit-range
+spec:
+  limits:
+  - default:
+      cpu: 1
+    defaultRequest:
+      cpu: 0.5
+    type: Container
+
+
+kubectl create -f limit-range.yaml --namespace=default-cpu-example
+kubectl get limitrange -n default-cpu-example
+
+Now if you create a Pod in the default-cpu-example namespace, and any container in that Pod does not specify its own values for CPU request and CPU limit,
+ then the control plane applies default values: a CPU request of 0.5 and a default CPU limit of 1.
+
+Here's a manifest for a Pod that has one container. The container does not specify a CPU request and limit.
+
+
+
+
+
+cpu-defauls-pod.yaml
+
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: default-cpu-demo
+spec:
+  containers:
+  - name: default-cpu-demo-ctr
+    image: nginx
+
+
+kubectl create -f cpu-default-pod.yaml --namespace default-cpu-example
+kubectl get pod default-cpu-demo --output=yaml --namespace=default-cpu-example
+
+The output shows that the Pod's only container has a CPU request of 500m cpu (which you can read as “500 millicpu”), and a CPU limit of 1 cpu.
+ These are the default values specified by the LimitRange.
+
+
+What if you specify a container's limit, but not its request? 
+
+cpu-default-pod-2.yaml
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: default-cpu-demo-2
+spec:
+  containers:
+  - name: default-cpu-demo-2-ctr
+    image: nginx
+    resources:
+      limits:
+        cpu: "1"
+
+
+The output shows that the container's CPU request is set to match its CPU limit. Notice that the container was not assigned the default CPU request value of 0.5 cpu:
+
+--> 
+
+resources:
+      limits:
+        cpu: "1"
+      requests:
+        cpu: "1"
+
+
+What if you specify a container's request, but not its limit?
+
+cpu-default-pod-3.yaml
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: default-cpu-demo-3
+spec:
+  containers:
+  - name: default-cpu-demo-3-ctr
+    image: nginx
+    resources:
+      requests:
+        cpu: "0.75"
+
+The output shows that the container's CPU request is set to the value you specified at the time you created the Pod (in other words: it matches the manifest). 
+However, the same container's CPU limit is set to 1 cpu, which is the default CPU limit for that namespace.
+
+resources:
+  limits:
+    cpu: "1"
+  requests:
+    cpu: 750m
+
+----------------------------------------------------
+
+kubectl create namespace default-mem-example
+
+
+memory-default.yaml
+
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: mem-limit-range
+spec:
+  limits:
+  - default:
+      memory: 512Mi
+    defaultRequest:
+      memory: 256Mi
+    type: Container
+
+kubectl create -f memory-default.yaml 
+
+
+Now if you create a Pod in the default-mem-example namespace, and any container within that Pod does not specify its own values for memory request and memory limit,
+then the control plane applies default values: a memory request of 256MiB and a memory limit of 512MiB.
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: default-mem-demo
+spec:
+  containers:
+  - name: default-mem-demo-ctr
+    image: nginx
+
+kubectl create -f default-memory-pod.yaml
+
+kubectl get pod default-mem-demo --output=yaml --namespace=default-mem-example
+
+The output shows that the Pod's container has a memory request of 256 MiB and a memory limit of 512 MiB. These are the default values specified by the LimitRange.
+
+-->
+
+resources:
+      limits:
+        memory: 512Mi
+      requests:
+        memory: 256Mi
+
+
+What if you specify a container's limit, but not its request?
+
+default-memory-pod-2.yaml
+
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: default-mem-demo-2
+spec:
+  containers:
+  - name: default-mem-demo-2-ctr
+    image: nginx
+    resources:
+      limits:
+        memory: "1Gi"
+
+
+kubectl get pod default-mem-demo-2 --output=yaml --namespace=default-mem-example
+
+
+The output shows that the container's memory request is set to match its memory limit. 
+Notice that the container was not assigned the default memory request value of 256Mi.
+
+-->
+
+resources:
+  limits:
+    memory: 1Gi
+  requests:
+    memory: 1Gi
+
+----------------------
+
+What if you specify a container's request, but not its limit?
+
+default-memory-pod-3.yaml
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: default-mem-demo-3
+spec:
+  containers:
+  - name: default-mem-demo-3-ctr
+    image: nginx
+    resources:
+      requests:
+
+        memory: "128Mi"
+
+
+The output shows that the container's memory request is set to the value specified in the container's manifest. The container is limited to use no more than 512MiB of memory, which matches the default memory limit for the namespace.
+
+resources:
+  limits:
+    memory: 512Mi
+  requests:
+    memory: 128Mi
+
+--------------------------------
+
+Daemon Sets -- 
+
+
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: monitoring-daemon
+spec:
+  selector:
+     matchLabels:
+	app: monitoring-agent
+  template:
+     metadata:
+       labels: 
+         app: monitoring-agent
+     spec:
+       containers:
+       - name: monitoring-agent
+         image: monitoring-agent
+
+
+Deploy a DaemonSet for FluentD Logging.
+
+Use the given specifications.
+
+CheckCompleteIncomplete
+Name: elasticsearch
+
+Namespace: kube-system
+
+Image: k8s.gcr.io/fluentd-elasticsearch:1.20
+
+
+An easy way to create a DaemonSet is to first generate a YAML file for a Deployment with the command 
+kubectl create deployment elasticsearch --image=k8s.gcr.io/fluentd-elasticsearch:1.20 -n kube-system --dry-run=client -o yaml > fluentd.yaml. 
+Next, remove the replicas, strategy and status fields from the YAML file using a text editor. Also, change the kind from Deployment to DaemonSet.
+
+Finally, create the Daemonset by running kubectl create -f fluentd.yaml
+
+
+controlplane ~ ➜  cat fluentd.yaml 
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  creationTimestamp: null
+  labels:
+    app: elasticsearch
+  name: elasticsearch
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      app: elasticsearch
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: elasticsearch
+    spec:
+      containers:
+      - image: k8s.gcr.io/fluentd-elasticsearch:1.20
+        name: fluentd-elasticsearch
+        resources: {}
+
+-------------------------
+
+Static pods
+
+kubelet -->  /etc/kubernetes/manifests
+kubelet.service --> --pod-manifest-path = /etc/kubernetes/manfiests
+or in  		    --config=kubeconfig.yaml    -->  inside this file --> staticPodPath: /etc/kubernetes/manifests
+ 
+you cant modify static pod while running you have to edit manifest file
+
+Static Pods Vs Daemon Sets
+
+Static Pods --> created by Kubelet.   --> Deploy Control Plane Components as Static Pods
+DaemonSets --> Created by Kube-API-Server ( DaemonSet Controller) --> Deploy Monitoring Agents, Logging Agents on nodes
+
+Both ignored by Kube Scheduler. 
+
+----------------------------
+
+Find static pods
+
+Run the command kubectl get pods --all-namespaces and look for those with -controlplane appended in the name
+
+Run the kubectl get pods --all-namespaces -o wide and identify the node in which static pods are deployed.
+
+Create a static pod named static-busybox that uses the busybox image and the command sleep 1000 
+
+-->   Create a pod definition file called static-busybox.yaml with the provided specs and place it under /etc/kubernetes/manifests directory
+
+kubectl run --restart=Never --image=busybox static-busybox --dry-run=client -o yaml --command -- sleep 1000 > /etc/kubernetes/manifests/static-busybox.yaml
+
+
+edit to busybox:1.28.4
+
+Simply edit the static pod definition file and save it. If that does not re-create the pod, run: kubectl run --restart=Never --image=busybox:1.28.4 static-busybox --dry-run=client -o yaml --command -- sleep 1000 > /etc/kubernetes/manifests/static-busybox.yaml
+
+---------------------------
+
+multiple schedulers
+
+- default scheduler 
+
+my-scheduler-config.yaml
+
+apiVersion: kubescheduler.config.k8s.io/v1
+kind: KubeSchedulerConfiguration
+profiles:
+ - schedulerName: my-scheduler
+
+
+kubectl get events -o wide
+kubectl logs my-custom-scheduler --name-space=kube-system
+
+
+We have already created the ServiceAccount and ClusterRoleBinding that our custom scheduler will make use of.
+
+
+Checkout the following Kubernetes objects:
+
+ServiceAccount: my-scheduler (kube-system namespace)
+ClusterRoleBinding: my-scheduler-as-kube-scheduler
+ClusterRoleBinding: my-scheduler-as-volume-scheduler
+
+Run the command: kubectl get serviceaccount -n kube-system & kubectl get clusterrolebinding
+
+Note: - Don't worry if you are not familiar with these resources. We will cover it later o
+
+
+Let's create a configmap that the new scheduler will employ using the concept of ConfigMap as a volume.
+Create a configmap with name my-scheduler-config using the content of file /root/my-scheduler-config.yaml
+
+kubectl create cm my-scheduler-config -n kube-system --from-file /root/my-scheduler-config.yaml 
+
+
+
+Deploy an additional scheduler to the cluster following the given specification.
+
+Use the manifest file provided at /root/my-scheduler.yaml. Use the same image as used by the default kubernetes scheduler  (k8s.gcr.io/kube-scheduler:v1.24.0)
+
+--> modify yaml file with correct image then
+
+kubectl create -f /root/my-scheduler -n kube-system
+
+
+A POD definition file is given. Use it to create a POD with the new custom scheduler.
+
+File is located at /root/nginx-pod.yaml
+
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx
+spec:
+  containers:
+  - image: nginx
+    name: nginx
+  schedulerName: my-scheduler
+                       
+
+-----------------------------------------------
+
+Scheduling profiles
+
+pod-definition.yaml 
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: simple-webapp-color
+spec:
+  priorityClassName: high-priority 
+  containers: 
+  - name: simple-webapp-color
+    image: simple-webapp-color
+    resources:
+      requests:
+        memory: "1Gi"
+	cpu: 10
+
+
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: high-priority
+value: 10000000
+globalDefault: false
+description: " This priority class should be used for xyz pods only"
+
+
+1. scheduling queue [ PrioritySort] 
+2. filtering [NodeResourcesFit][NodeName][NodeUnschedulable]
+3. scoring [NodeResourcesFit][ImageLocality]
+4. binding [DefaultBinder]
+
+* Extension Points [QueueSort, PreFilter, Filter, PostFilter,PreScore,score,reserve,permit,preBind,bind,postBind]
+
+apiVersion: kubescheduler.config.k8s.io/v1
+kind: KubeSchedulerConfiguration
+profiles:
+ - schedulerName: my-scheduler
+   plugins:
+     score:
+        disabled:
+         - name: TaintToleration
+        enabled:
+         - name: MyCustomPluginA
+         - name: MyCustomPluginB
+
+
+apiVersion: kubescheduler.config.k8s.io/v1
+kind: KubeSchedulerConfiguration
+profiles:
+ - schedulerName: my-scheduler-2
+   plugins:
+    preScore:
+      disabled:
+       - name: '*'
+    score:
+      enabled:
+       - name: '*' 
+
+
+https://github.com/kubernetes/community/blob/master/contributors/devel/sig-scheduling/scheduling_code_hierarchy_overview.md
+
+
+
+https://kubernetes.io/blog/2017/03/advanced-scheduling-in-kubernetes/
+
+
+
+https://jvns.ca/blog/2017/07/27/how-does-the-kubernetes-scheduler-work/
+
+
+
+https://stackoverflow.com/questions/28857993/how-does-kubernetes-scheduler-work
+
+-------------------------------------
+
+kubectl logs -f pod_name
+
+------------------------
+
+Application life cycle
+
+kubectl create -f deployment-def.yaml
+kubectl get deployments
+kubeclt apply -f deployment-def.yaml
+kubectl set image deployment/myapp-deployment nginx:1.9.1
+kubectl rollout status deployment/myapp-deployment
+kubectl history deployment/myapp-deployment
+kubectl rollout undo deployment/myapp-deployment
+
+------
+
+commands and arguments
+
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: command-demo
+  labels:
+    purpose: demonstrate-command
+spec:
+  containers:
+  - name: command-demo-container
+    image: debian
+    command: ["printenv"]
+    args: ["HOSTNAME", "KUBERNETES_PORT"]
+  restartPolicy: OnFailure
+
+apiVersion: v1 
+kind: Pod 
+metadata:
+  name: ubuntu-sleeper-3 
+spec:
+  containers:
+  - name: ubuntu
+    image: ubuntu
+    command:
+      - "sleep"
+    args:
+      - "1200"
+
+
+---
+apiVersion: v1 
+kind: Pod 
+metadata:
+  name: ubuntu-sleeper-3 
+spec:
+  containers:
+  - name: ubuntu
+    image: ubuntu
+    command:
+      - "sleep"
+      - "1200"
+
+
+
+Create a pod with the given specifications. By default it displays a blue background. Set the given command line arguments to change it to green.
+
+apiVersion: v1 
+kind: Pod 
+metadata:
+  name: webapp-green
+  labels:
+      name: webapp-green 
+spec:
+  containers:
+  - name: simple-webapp
+    image: kodekloud/webapp-color
+    args: ["--color", "green"]
