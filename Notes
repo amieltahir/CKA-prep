@@ -1505,3 +1505,428 @@ now both are encrypted
 00000120  5b 52 1e f7 9a e2 43 71  aa 4a 01 fa 16 0e 64 22  |[R....Cq.J....d"|
 00000130  c8 ec 75 92 d1 8a 7e 7d  09 c5 30 0a              |..u...~}..0.|
 0000013c
+
+----------------
+
+Multi containers pods
+
+
+Init Containers
+
+InitContainers
+In a multi-container pod, each container is expected to run a process that stays alive as long as the POD's lifecycle. For example in the multi-container pod that we talked about earlier that has a web application and logging agent, both the containers are expected to stay alive at all times. The process running in the log agent container is expected to stay alive as long as the web application is running. If any of them fails, the POD restarts.
+
+
+
+But at times you may want to run a process that runs to completion in a container. For example a process that pulls a code or binary from a repository that will be used by the main web application. That is a task that will be run only  one time when the pod is first created. Or a process that waits  for an external service or database to be up before the actual application starts. That's where initContainers comes in.
+
+
+
+An initContainer is configured in a pod like all other containers, except that it is specified inside a initContainers section,  like this:
+
+
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: myapp-pod
+  labels:
+    app: myapp
+spec:
+  containers:
+  - name: myapp-container
+    image: busybox:1.28
+    command: ['sh', '-c', 'echo The app is running! && sleep 3600']
+  initContainers:
+  - name: init-myservice
+    image: busybox
+    command: ['sh', '-c', 'git clone <some-repository-that-will-be-used-by-application> ; done;']
+
+
+When a POD is first created the initContainer is run, and the process in the initContainer must run to a completion before the real container hosting the application starts. 
+
+You can configure multiple such initContainers as well, like how we did for multi-pod containers. In that case each init container is run one at a time in sequential order.
+
+If any of the initContainers fail to complete, Kubernetes restarts the Pod repeatedly until the Init Container succeeds.
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: myapp-pod
+  labels:
+    app: myapp
+spec:
+  containers:
+  - name: myapp-container
+    image: busybox:1.28
+    command: ['sh', '-c', 'echo The app is running! && sleep 3600']
+  initContainers:
+  - name: init-myservice
+    image: busybox:1.28
+    command: ['sh', '-c', 'until nslookup myservice; do echo waiting for myservice; sleep 2; done;']
+  - name: init-mydb
+    image: busybox:1.28
+    command: ['sh', '-c', 'until nslookup mydb; do echo waiting for mydb; sleep 2; done;']
+
+
+Read more about initContainers here. And try out the upcoming practice test.
+
+https://kubernetes.io/docs/concepts/workloads/pods/init-containers/
+
+
+spec:
+
+  initContainers:
+  - name: init-red 
+    image: busybox
+    command:
+      - "sleep"
+      - "20"  
+  containers:
+  - command:
+    - sh
+    - -c
+    - echo The app is running! && sleep 3600
+    image: busybox:1.28
+
+-------------
+
+OS upgrades
+
+pod eviction time out --> default 5 mins
+
+kubectl drain node-1 ---> pods are shutdown gracefully and moved to another node
+kubectl cordon node-1 ---> marks it unscheduable 
+
+when upgrade is done and its online its still not available
+u have to kubectl uncordon node-1
+
+k drain node01 --ignore-daemonsets 
+k uncordon node01 ---> only new pods will be scheduled on node01
+------
+
+K8s software releases
+
+v1.11.3   
+1. major  11. minor ( features & functionality)  3.patch (bug fixes)
+
+etcd cluster has its own release, also coreDNS
+
+K8s components
+
+1. kube-api-server ( has to be highest version others has to be below or same)
+2. controller-manager
+3. kube-scheudler
+4. kubelet
+5.kube-proxy
+6.kubectl
+7.etcd cluster
+8.coreDNS
+
+
+upgrade master first, workers stay up.
+or
+all workers upgraded, no user access no apps
+or
+one worker upgraded one by one.
+
+
+kubeadm upgrade plan ( we can go one minor version at a time)
+
+apt-get upgrade -y kubeadm=1.12.0-00
+kubeadm upgrade apply v.12.0
+
+apt-upgrade -y kubectl=1.12.0-00
+systemctl restart kubelet
+kubectl get nodes -- see version 
+
+kubectl drain node-1
+apt-get upgrade -y kubeadm=1.12.0-00
+apt-upgrade -y kubectl=1.12.0-00
+kubeadm upgrade node config --kubelet-version v1.12.0
+kubectl uncordon node-1
+-----
+
+UPGRADE
+
+check kubeadm latest version
+
+ kubeadm upgrade plan
+[upgrade/config] Making sure the configuration is correct:
+[upgrade/config] Reading configuration from the cluster...
+[upgrade/config] FYI: You can look at this config file with 'kubectl -n kube-system get cm kubeadm-config -o yaml'
+[preflight] Running pre-flight checks.
+[upgrade] Running cluster health checks
+[upgrade] Fetching available versions to upgrade to
+[upgrade/versions] Cluster version: v1.24.0
+[upgrade/versions] kubeadm version: v1.23.0
+I1030 01:25:39.842509    7408 version.go:255] remote version is much newer: v1.25.3; falling back to: stable-1.23
+[upgrade/versions] Target version: v1.23.13
+
+** upgrading control plane first
+
+controlplane ~ ✖ kubectl drain controlplane --ignore-daemonsets 
+node/controlplane already cordoned
+WARNING: ignoring DaemonSet-managed Pods: kube-system/kube-flannel-ds-f7kjb, kube-system/kube-proxy-xzwpb
+evicting pod kube-system/coredns-6d4b75cb6d-rd58f
+evicting pod default/blue-797fc567b4-jtspm
+evicting pod kube-system/coredns-6d4b75cb6d-k4gdk
+evicting pod default/blue-797fc567b4-cqb5t
+
+
+Upgrade the controlplane components to exact version v1.24.0
+
+Upgrade the kubeadm tool (if not already), then the controlplane components, and finally the kubelet. Practice referring to the Kubernetes documentation page.
+Note: While upgrading kubelet, if you hit dependency issues while running the apt-get upgrade kubelet command, use the apt install kubelet=1.24.0-00 command instead.
+
+
+apt-update
+apt-cache show kubeadm | grep ^Version
+apt-get install kubeadm=1.24.0-00
+
+kubeadm version
+kubeadm version: &version.Info{Major:"1", Minor:"24", GitVersion:"v1.24.0", GitCommit:"4ce5a8954017644c5420bae81d72b09b735c21f0", GitTreeState:"clean", BuildDate:"2022-05-03T13:44:24Z", GoVersion:"go1.18.1", Compiler:"gc", Platform:"linux/amd64"}
+
+
+
+-------------
+
+apt-cache show kubectl | grep ^Version
+apt-get install kubelet=1.24.0-00
+systemctl daemon-reload
+systemctl restart kubelet
+
+controlplane ~ ➜  kubectl version
+Client Version: version.Info{Major:"1", Minor:"23", GitVersion:"v1.23.0", GitCommit:"ab69524f795c42094a6630298ff53f3c3ebab7f4", GitTreeState:"clean", BuildDate:"2021-12-07T18:16:20Z", GoVersion:"go1.17.3", Compiler:"gc", Platform:"linux/amd64"}
+Server Version: version.Info{Major:"1", Minor:"24", GitVersion:"v1.24.0", GitCommit:"4ce5a8954017644c5420bae81d72b09b735c21f0", GitTreeState:"clean", BuildDate:"2022-05-03T13:38:19Z", GoVersion:"go1.18.1", Compiler:"gc", Platform:"linux/amd64"}
+
+kubectl uncordon controlplane
+
+---------------
+
+upgrade worker node
+
+kubectl drain node01 --ignore-daemonsets
+ssh to the node 
+ssh node01
+apt-get update
+apt-get install kubeadm=1.24.0-00
+kubeadm upgrade node
+
+
+apt-get install kubelet=1.24.0-00
+systemctl daemon-reload
+systemctl restart kubelet
+kubectl uncordon node01
+
+-------------------
+
+backup and restore
+
+candidates:
+
+1. resource configuration
+2. etcd cluster
+3. Persistent volumes
+
+Its better to backup resource configs from kube-api server
+
+kubectl get all --all-namespaces -o yaml > all-deploy-services.yaml 
+
+etcd cluster --> state of kluster
+etcd.service --> --data-dir=/var/lib/etcd
+
+backup ETCD
+
+ETCDCTL_API=3 etcdctl snapshot save snapshot.db
+--endpoints=https://127.0.0.1:2379
+--cacert=/etc/etcd/ca.crt
+--cert=/etc/etcd/etcd-server.crt
+--key=/etc/etcd
+
+ETCDCTL_API=3 etcdctl snapshot status snapshot.db
+--endpoints=https://127.0.0.1:2379
+--cacert=/etc/etcd/ca.crt
+--cert=/etc/etcd/etcd-server.crt
+--key=/etc/etcd
+
+restore ETCD
+
+service kube-apiserver stop
+
+ETCDCTL_API=3 etcdctl snapshot restore snapshot.db 
+--endpoints=https://127.0.0.1:2379
+--cacert=/etc/etcd/ca.crt
+--cert=/etc/etcd/etcd-server.crt
+--key=/etc/etcd
+--data-dir /var/lib/etcd-from-backup
+
+
+etcdctl is a command line client for etcd.
+
+
+
+In all our Kubernetes Hands-on labs, the ETCD key-value database is deployed as a static pod on the master. The version used is v3.
+
+To make use of etcdctl for tasks such as back up and restore, make sure that you set the ETCDCTL_API to 3.
+
+
+
+You can do this by exporting the variable ETCDCTL_API prior to using the etcdctl client. This can be done as follows:
+
+export ETCDCTL_API=3
+
+On the Master Node:
+
+export ETCDCTL_API=3
+etcdctl version
+etcdctl version 3.3.13
+API version 3.3
+
+
+
+To see all the options for a specific sub-command, make use of the -h or --help flag.
+
+
+
+For example, if you want to take a snapshot of etcd, use:
+
+etcdctl snapshot save -h and keep a note of the mandatory global options.
+
+
+
+Since our ETCD database is TLS-Enabled, the following options are mandatory:
+
+--cacert  verify certificates of TLS-enabled secure servers using this CA bundle
+
+--cert    identify secure client using this TLS certificate file
+
+--endpoints=[127.0.0.1:2379]  This is the default as ETCD is running on master node and exposed on localhost 2379.
+
+--key     identify secure client using this TLS key file
+
+
+
+
+
+Similarly use the help option for snapshot restore to see all available options for restoring the backup.
+
+etcdctl snapshot restore -h
+
+For a detailed explanation on how to make use of the etcdctl command line tool and work with the -h flags, check out the solution video for the Backup and Restore Lab.
+
+
+
+configure new dir in etcd.service  --data-dir=/var/lib/etcd-from-backup
+
+
+systemctl etcd restart
+
+service kube-apiserver start
+
+for ETCDCTL_API=3 command specify these as well
+--endpoints=https://127.0.0.1:2379
+--cacert=/etc/etcd/ca.crt
+--cert=/etc/etcd/etcd-server.crt
+--key=/etc/etcd
+
+
+----------------
+
+Get current etcd version
+
+1.  kubectl describe pod etcd-controlplane -n kube-system | grep Image
+    Image:         k8s.gcr.io/etcd:3.5.3-0
+
+2. kubectl -n kube-system logs etcd-controlplane | grep -i 'etcd-version'
+
+etcd-version":"3.5.3"
+
+
+At what address can you reach the ETCD cluster from the controlplane node?
+
+
+Check the ETCD Service configuration in the ETCD POD
+
+kubectl -n kube-system get pod  etcd-controlplane -o YAML | grep listen-client-urls 
+
+ - --listen-client-urls=https://127.0.0.1:2379,https://10.2.255.3:2379
+
+
+/etc/kubernetes/pki/etcd/server.crt ---> server certificate file
+
+/etc/kubernetes/pki/etcd/ca.crt --> ca cert file
+
+
+The master node in our cluster is planned for a regular maintenance reboot tonight. While we do not anticipate anything to go wrong, we are required to take the necessary backups. Take a snapshot of the ETCD database using the built-in snapshot functionality.
+
+Store the backup file at location /opt/snapshot-pre-boot.db
+
+
+ETCDCTL_API=3 etcdctl --endpoints=https://127.0.0.1:2379 \
+> --cacert=/etc/kubernetes/pki/etcd/ca.crt \
+> --cert=/etc/kubernetes/pki/etcd/server.crt \
+> --key=/etc/kubernetes/pki/etcd/server.key \
+> snapshot save /opt/snapshot-pre-boot.db
+Snapshot saved at /opt/snapshot-pre-boot.db
+
+
+services, pods, deployments gone
+restore etcd
+
+Luckily we took a backup. Restore the original state of the cluster using the backup file.
+
+ETCDCTL_API=3 etcdctl  --data-dir /var/lib/etcd-from-backup snapshot restore /opt/snapshot-pre-boot.db
+
+update etcd.yaml in manifest with new etcd backup path
+
+- hostPath:
+      path: /var/lib/etcd-from-backup
+      type: DirectoryOrCreate
+
+
+
+root@controlplane:~# ETCDCTL_API=3 etcdctl  --data-dir /var/lib/etcd-from-backup \
+snapshot restore /opt/snapshot-pre-boot.db
+
+
+2022-03-25 09:19:27.175043 I | mvcc: restore compact to 2552
+2022-03-25 09:19:27.266709 I | etcdserver/membership: added member 8e9e05c52164694d [http://localhost:2380] to cluster cdf818194e3a8c32
+root@controlplane:~# 
+
+
+Note: In this case, we are restoring the snapshot to a different directory but in the same server where we took the backup (the controlplane node) As a result, the only required option for the restore command is the --data-dir.
+
+
+
+Next, update the /etc/kubernetes/manifests/etcd.yaml:
+
+We have now restored the etcd snapshot to a new path on the controlplane - /var/lib/etcd-from-backup, so, the only change to be made in the YAML file, is to change the hostPath for the volume called etcd-data from old directory (/var/lib/etcd) to the new directory (/var/lib/etcd-from-backup).
+
+ volumes:
+  - hostPath:
+      path: /var/lib/etcd-from-backup
+      type: DirectoryOrCreate
+    name: etcd-data
+
+
+With this change, /var/lib/etcd on the container points to /var/lib/etcd-from-backup on the controlplane (which is what we want).
+
+When this file is updated, the ETCD pod is automatically re-created as this is a static pod placed under the /etc/kubernetes/manifests directory.
+
+
+
+Note 1: As the ETCD pod has changed it will automatically restart, and also kube-controller-manager and kube-scheduler. Wait 1-2 to mins for this pods to restart. You can run the command: watch "crictl ps | grep etcd" to see when the ETCD pod is restarted.
+
+Note 2: If the etcd pod is not getting Ready 1/1, then restart it by kubectl delete pod -n kube-system etcd-controlplane and wait 1 minute.
+
+Note 3: This is the simplest way to make sure that ETCD uses the restored data after the ETCD pod is recreated. You don't have to change anything else.
+
+
+
+If you do change --data-dir to /var/lib/etcd-from-backup in the ETCD YAML file, make sure that the volumeMounts for etcd-data is updated as well, with the mountPath pointing to /var/lib/etcd-from-backup (THIS COMPLETE STEP IS OPTIONAL AND NEED NOT BE DONE FOR COMPLETING THE RESTORE)
+
+
+
+note: volume mounts refer to the dir mounted at container level
+      volumes refer to dir in host (host_path) 
