@@ -1929,4 +1929,4 @@ If you do change --data-dir to /var/lib/etcd-from-backup in the ETCD YAML file, 
 
 
 note: volume mounts refer to the dir mounted at container level
-      volumes refer to dir in host (host_path) 
+      volumes refer to dir in host (host_path) kub
