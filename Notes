@@ -1930,3 +1930,146 @@ If you do change --data-dir to /var/lib/etcd-from-backup in the ETCD YAML file, 
 
 note: volume mounts refer to the dir mounted at container level
       volumes refer to dir in host (host_path) kub
+
+---------------
+
+https://kubernetes.io/docs/tasks/administer-cluster/configure-upgrade-etcd/#backing-up-an-etcd-cluster
+
+https://github.com/etcd-io/website/blob/main/content/en/docs/v3.5/op-guide/recovery.md
+
+https://www.youtube.com/watch?v=qRPNuT080Hk
+
+-----
+
+ kubectl config
+Modify kubeconfig files using subcommands like "kubectl config set current-context my-context"
+
+ The loading order follows these rules:
+
+  1.  If the --kubeconfig flag is set, then only that file is loaded. The flag may only be set once and no merging takes
+place.
+  2.  If $KUBECONFIG environment variable is set, then it is used as a list of paths (normal path delimiting rules for
+your system). These paths are merged. When a value is modified, it is modified in the file that defines the stanza. When
+a value is created, it is created in the first file that exists. If no files in the chain exist, then it creates the
+last file in the list.
+  3.  Otherwise, ${HOME}/.kube/config is used and no merging takes place.
+
+Available Commands:
+  current-context Display the current-context
+  delete-cluster  Delete the specified cluster from the kubeconfig
+  delete-context  Delete the specified context from the kubeconfig
+  delete-user     Delete the specified user from the kubeconfig
+  get-clusters    Display clusters defined in the kubeconfig
+  get-contexts    Describe one or many contexts
+  get-users       Display users defined in the kubeconfig
+  rename-context  Rename a context from the kubeconfig file
+  set             Set an individual value in a kubeconfig file
+  set-cluster     Set a cluster entry in kubeconfig
+  set-context     Set a context entry in kubeconfig
+  set-credentials Set a user entry in kubeconfig
+  unset           Unset an individual value in a kubeconfig file
+  use-context     Set the current-context in a kubeconfig file
+  view            Display merged kubeconfig settings or a specified kubeconfig file
+
+Usage:
+  kubectl config SUBCOMMAND [options]
+
+Use "kubectl <command> --help" for more information about a given command.
+Use "kubectl options" for a list of global command-line options (applies to all commands).
+
+
+
+
+
+student-node ~ ➜  kubectl config get-contexts 
+CURRENT   NAME       CLUSTER    AUTHINFO   NAMESPACE
+*         cluster1   cluster1   cluster1   
+          cluster2   cluster2   cluster2   
+
+student-node ~ ➜  kubectl config use-context cluster1 
+Switched to context "cluster1".
+
+You can SSH to all the nodes (of both clusters) from the student-node.
+
+For example:
+
+student-node ~ ➜  ssh cluster1-controlplane
+Welcome to Ubuntu 18.04.6 LTS (GNU/Linux 5.4.0-1086-gcp x86_64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/advantage
+This system has been minimized by removing packages and content that are
+not required on a system that users do not log into.
+
+To restore this content, you can run the 'unminimize' command.
+
+cluster1-controlplane ~ ➜ 
+To get back to the student node, use the logout or exit command, or, hit Control +D
+
+cluster1-controlplane ~ ➜  logout
+Connection to cluster1-controlplane closed.
+
+student-node ~ ➜  
+
+
+external etcd config ---> kube-api-server.yaml
+
+in etcd-server node which has local etcd configured
+
+ETCDCTL_API=3 etcdctl \
+ --endpoints=https://127.0.0.1:2379 \
+ --cacert=/etc/etcd/pki/ca.pem \
+ --cert=/etc/etcd/pki/etcd.pem \
+ --key=/etc/etcd/pki/etcd-key.pem \
+  member list
+
+
+Take a backup of etcd on cluster1 and save it on the student-node at the path /opt/cluster1.db
+
+
+If needed, make sure to set the context to cluster1 (on the student-node):
+
+student-node ~ ➜  kubectl config use-context cluster1
+Switched to context "cluster1".
+
+student-node ~ ➜  
+
+student-node /etc ✖ kubectl describe  pods -n kube-system etcd-cluster1-controlplane  | grep advertise-client-urls
+Annotations:          kubeadm.kubernetes.io/etcd.advertise-client-urls: https://10.1.36.24:2379
+      --advertise-client-urls=https://10.1.36.24:2379
+
+student-node /etc ➜  kubectl describe  pods -n kube-system etcd-cluster1-controlplane  | grep pki                  
+      --cert-file=/etc/kubernetes/pki/etcd/server.crt
+      --key-file=/etc/kubernetes/pki/etcd/server.key
+      --peer-cert-file=/etc/kubernetes/pki/etcd/peer.crt
+      --peer-key-file=/etc/kubernetes/pki/etcd/peer.key
+      --peer-trusted-ca-file=/etc/kubernetes/pki/etcd/ca.crt
+      --trusted-ca-file=/etc/kubernetes/pki/etcd/ca.crt
+      /etc/kubernetes/pki/etcd from etcd-certs (rw)
+    Path:          /etc/kubernetes/pki/etcd
+
+
+SSH to the controlplane node of cluster1 and then take the backup using the endpoints and certificates we identified above:
+
+ETCD backup is taken from cluster control plane NODE!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+student-node /etc ✖ kubectl get nodes
+NAME                    STATUS   ROLES           AGE   VERSION
+cluster1-controlplane   Ready    control-plane   70m   v1.24.0
+cluster1-node01         Ready    <none>          69m   v1.24.0
+
+student-node /etc ➜  ssh cluster1-controlplane
+Welcome to Ubuntu 18.04.6 LTS (GNU/Linux 5.4.0-1092-gcp x86_64)
+
+
+ETCDCTL_API=3 etcdctl --endpoints=https://10.1.220.8:2379 --cacert=/etc/kubernetes/pki/etcd/ca.crt --cert=/etc/kubernetes/pki/etcd/server.crt --key=snapshot save /opt/cluster1.db
+
+Finally, copy the backup to the student-node. To do this, go back to the student-node and use scp as shown below:
+
+student-node ~ ➜  scp cluster1-controlplane:/opt/cluster1.db /opt
+cluster1.db    
+
+why i have error context expired
+
+https://medium.com/@shoaibjdev/etcdctl-error-context-deadline-exceeded-accessing-etcd-control-in-newer-versions-of-kubernetes-ef78c83be6ce     
