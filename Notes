@@ -2073,3 +2073,609 @@ cluster1.db
 why i have error context expired
 
 https://medium.com/@shoaibjdev/etcdctl-error-context-deadline-exceeded-accessing-etcd-control-in-newer-versions-of-kubernetes-ef78c83be6ce     
+
+--------------------------------------------------------------------
+
+SECURITY!!!!!
+
+1. Password based authenticaion disabled
+2. SSH key based authentication 
+
+Authentication
+
+Admins
+Developers
+End Users
+Bots -- service accounts
+
+you cant create users kubectl create user 
+but we can create service accounts
+---> kubectl create serviceaccount sa1
+---> kubectl get serviceaccount 
+
+Users managed by kube-api server
+
+Auth mechanisim  - basic 
+Static Password File  -- users-details.csv -- passwd,userID,UID
+kube-apiserver.service --> 
+/etc/kubernetes/manifests/kube-apiserver.yaml  --basic-auth-file=users-details.csv 
+
+authenticate user 
+curl -v -k https://master-node-ip:6443/api/v1/pods -u "user1:password123" 
+
+we add group to static pass file
+passwd,user,uid,group1 
+
+Static Token File
+
+user-token-details.csv 
+
+--token-auth-file=user-details.csv
+
+
+
+Certificates
+Identity Services 
+
+------------
+
+TLS transport layer sec
+
+1. symmetric encryption  -- same key in client and server ( not safe)
+2. asymmetric encryption -- private key, public lock  --> ssh-keygen --> id_rsa --> id_rsa.pub
+certificate authority, CS-request 
+PKI - Public Key Infrastructure
+
+Certificate ( Public Key) *.crt, *.pem 
+server.crt
+server.pem
+client.crt
+client.pem
+
+Private Key - *.key *-key.pem
+
+server.key
+server-key.pem
+client.key
+client-key.pem
+
+root certificates --> certificate authority  --> ca.cert / ca.key
+
+server certificates 
+
+master node 
+kube-api-server --> apiserver.crt(pub)  apiserver.key(prv)
+etcd server --> etcdserver.crt     etcdserver.key
+
+worker-node
+kubelet server --> kubelet.crt --> kubelet.key 
+
+client certificates
+
+admin to access kube-api with kubectl REST API  --> admin.crt  admin.key 
+kube-scheduler to access kube-api server --> scheduler.crt  scheduler.key 
+kube-controller-manager to access kube-api server -->  controller-manager.crt  controller-manager.key
+kube-proxy to access kube-api server --> kube-proxy.crt  kube-proxy.key 
+
+####
+kube-api server to connect to etcd server -- can use existing or api-server-etcdclient.crt / apiserver-etcd-client.key 
+kube-api server to connect to kubelet server on worker nodes -- either use existing or api-server-client.crt / api-server-etcd-client.key
+
+--- certificate creation 
+
+EASYRSA / OPENSSL / CFSSL 
+
+generate keys openssl genrsa -out ca.key 2048 --> ca.key 
+certificate sign request --> openssl req -new -key ca.key -subj "/CN=KUBERNETES-CA" -out ca.csr -- > ca.csr
+sign certificates --> openssl x509 -req -in ca.csr -signkey ca.key -out ca.crt -- > ca.crt
+
+--------
+
+client side
+
+ADMIN USER
+
+generate keys openssl genrsa -out admin.key 2048 --> admin.key
+certificate sign request --> openssl req -new -key admin.key -subj "/CN=kube-admin" -out admin.csr -- > admin.csr
+sign certificate --> openssl x509 -req in admin.csr -CA ca.crt -CAkey ca.key -out admin.crt --> admin.crt
+
+curl https://kube-apiserver:6443/api/v1/pods --key admin.key --cert admin.crt --cacert ca.crt
+
+kube-config.yaml 
+
+apiVersion: v1
+clusters:
+- cluster: 
+    certificate-authority: ca.crt
+    server: https://kube-apiserver:6443
+  name: kubernetes
+kind: Config
+users:
+- name: kubernetes-admin
+  user:
+    client-certificate: admin.crt
+    client-key: admin.key
+
+-------
+server side
+
+ETCD servers
+
+etcd can be deployed as a cluster on HA we must generate additional peer certificates
+etcdserver.crt etcdserver.key
+etcdpeer1.crt  etcdpeer1.key
+etcdpeer2.crt  etcdpeer2.key
+
+etcd.yaml
+
+- --key-file=/path/etcdserver.key
+- --cert-file=/path/etcdserver.crt
+
+- --peer-cert-file=/path/etcdpeer1.crt
+- --peer-client-cert-auth=true
+- --peer-key-file=/etc/kubernetes/pki/etcd/peer.key
+- --peer-trusted-ca-file=/etc/kubernetes/pki/etcd/ca.crt
+- --trusted-ca-file=/etc/kubernetes/pki/etcd/ca.crt
+
+kube-api-server
+
+3 sets of certs -- one for master node, one for etcd , one for kubelet 
+
+generate key -- >openssl genrsa -out apiserver.key 2048 
+csr --> openssl req -new -key apiserver.key -subj "/CN=kube-apiserver" -out apiserver.csr -config openssl.conf
+
+to specify alternate names we create openssl config file 
+
+openssl.conf --> pass this file as argument in CSR 
+[alt_names]
+DNS.1 = kubernetes
+DNS.2 = kubernetes.default
+DNS.3 = kubernetees.default.svc
+DNS.4 = kubernetes.default.svc.cluster.local
+IP.1 = 10.3l.23.12
+IP.2 = 172.17.0.87
+
+sign cert --> openssl x509 -req -in apiserver.csr -CA ca.crt -CAkey ca.key -out apiserver.crt --> apiserver.crt
+
+
+PASS THESE KEYS/CERTS/CLIENT CERTS to kube-api server exec
+
+ExecStart= /usr/local/bin/kube-apiserver
+--etcd-cafile=/var/lib/kubernetes/ca.pem
+--etcd-certfile=/var/lib/kubernetes/apiserver-etcd-client.crt
+--etcd-keyfile=/var/lib/kubernetes/apiserver-etcd-client.key
+
+--client-ca-file=/var/lib/kubernetes/ca.pem
+--tls-cert-file=/var/lib/kubernetes/apiserver.crt
+--tls-private-key-file=/var/lib/kubernetes/apiserver.key
+
+--kubelet-certificate-authority=/var/lib/kubernetes/ca.pem
+--kubelet-client-certificate=/var/lib/kubernetes/api-server-kubelet-client.crt
+--kubelet-client-key=/var/lib/kubernetes/apiserver-kubelet-client.key
+
+--------------------------
+
+kubernetes certificate health checker --- excel sheet
+
+1.certificate authority 
+--> server --> cert /etc/kubernetes/pki/ca.crt --> CN_Name = kubernetes -> CA server root certificates for Kubernetes API Server
+               key /etc/kubernetes/pki/ca.key  --> CA server root certificate key for Kubernetes API Server
+
+
+openssl x509 -in /etc/kubernetes/pki/ca.crt -text -noout
+check issuer, check subject, check expire date, check subject alternate name 
+
+-------------------
+2. kube-apiserver 
+server --> cert -->  /etc/kubernetes/pki/apiserver.crt --> CN_NAME = kube-apiserver --> Certificate to serve Kube-api server
+           key   --> /etc/kubernetes/pki/apiserver.key --> Key to serve Kube-api server
+
+openssl x509 -in /etc/kubernetes/pki/apiserver.crt -text -noout
+
+kube-api server->  /etc/kubernetes/pki/ca.crt -> CN_Name = kubernetes -> CA Certificate to validate clients connecting to Kube-API Server
+kubelet client -> /etc/kubernetes/pki/apiserver-kubelet-client.crt --> system:masters, CN = kube-apiserver-kubelet-client -> Client Certificate for Kube-API Server to connect to Kubelet
+                  /etc/kubernetes/pki/apiserver-kubelet-client.key  -> Client Key for Kube-API Server to connect to Kubelet
+
+openssl x509 -in /etc/kubernetes/pki/apiserver-kubelet-client.crt-text -noout
+
+kubelet client -> /etc/kubernetes/pki/apiserver-etcd-client.crt -> system:masters, CN = kube-apiserver-etcd-client -> Client Certificate for Kube-API Server to connect to ETCD Server
+                  /etc/kubernetes/pki/apiserver-etcd-client.key -> Client Key for Kube-API Server to connect to ETCD Server
+
+
+Client CA File: Kube API Server to ETCD   --> /etc/kubernetes/pki/etcd/ca.crt--> Subject: CN = etcd-ca --> "CA File to validate Kube-API server to ETCD Server Connectivity.
+ The ETCD setup can have a separate CA"
+------------------
+
+3. kubelet
+
+server -->  /var/lib/kubelet/pki/kubelet.crt
+            /var/lib/kubelet/pki/kubelet.key
+
+            /var/lib/kubelet/pki/kubelet-client-2022-10-18-15-28-17.pem
+
+
+------------------------------
+4. certificate authority (etcd)
+
+server -->  /etc/kubernetes/pki/etcd/ca.crt  --> 
+
+CA Server root certificates for ETCD Server. 
+(This could be the same as kube-api server or a separate one of its own.)
+
+/etc/kubernetes/pki/etcd/ca.key -->
+
+CA Server root certificate key for ETCD Server.
+ (This could be the same as kube-api server or a separate one of its own.)
+
+---------------
+5. etcd server
+
+/etc/kubernetes/pki/etcd/server.crt -->  Certificates for ETCD Server
+
+/etc/kubernetes/pki/etcd/server.key --> ETCD Server Certificate Key
+
+Checks to perform:
+1. Make sure the correct CN and ALT names, Organization are present. Specifically for the kube-api server and the nodes(kubelets).
+2. Ensure the certificates are not expired.
+3. Ensure the certificates are issued by the right CA.
+4. Ensure the correct certificate path is provided in the options on the service configuration files
+
+-------------------------------------------------------------------------------------------------------
+
+crictl ps -a
+
+crictl logs container_id
+
+-----
+
+certificate API 
+
+1. create certificate sign request object
+2. review request
+3. approve request 
+4. share certs to users
+
+openssl genrsa -out jane.key 2048 --> jane.key
+openssl req -new -key jane.key -subj "/CN=jane" -out jane.csr--> jane.csr
+
+jane-csr.yaml 
+
+kubectl get csr
+kubectl certificate approve jane
+
+controller-manager does all csr approve - csr signing 
+
+kube-controller-manager.yaml 
+
+- --cluster-signing-cert-file=/etc/kubernetes/pki/ca.crt
+- --cluster-signing-key-file=/etc/kubernetes/pki/ca.key 
+
+----
+
+controlplane ~ ➜  cat akshay.csr
+-----BEGIN CERTIFICATE REQUEST-----
+MIICVjCCAT4CAQAwETEPMA0GA1UEAwwGYWtzaGF5MIIBIjANBgkqhkiG9w0BAQEF
+AAOCAQ8AMIIBCgKCAQEAxh4HeSrlTuRYvgvmkf4NuqVPZoFehKXPotGkG30pMktC
+vxWkQ+axQG82oMF38QQNxLdVkbOemI1d4HVtw1prka0za4HFtjZr0c9scvTgRZJt
+zIrHHWO4viMOzsg+MczEgHuI3ES16Tn1Is7yIU9wAjUfRQdeBM1XjVa0OLfORUH8
+54nBU8oDq1eIszegeoLzZiFd2kbgdJRhMlZEeZa0BN+ZoMLddXfcJ458t7Bxqjsr
+LyG8Qtb38AocskUWyCyinYzI1GLOppEAlkLt3xZEpX9OBkCx/ereZcrnAhCjQLBR
+iZSae6AhrwLX2vPpoN/ojp1qYwnU2OfXuTDQECyrpQIDAQABoAAwDQYJKoZIhvcN
+AQELBQADggEBAGiatyMh7VRHSaW12mEgXLh3OQwzyl1qJr+vn7NAj3RdRD3ra03G
+++NlSshUtlav32LwFQCYKaPTMuIoLQdvn0pALo0Hp0Ssu/FCVdcXXVEMhtj4cXgR
+JSkmSuO5Gg5Tk03vwCDabtO+01/oiLCPWx07gaLSYt2Ks8FE18sRLdfFmjt2Prsm
+GXHr6iVQlmQnn0y0r1MGUgpKntUkrxXmNC3fG+w9Jobnz1Xdxa6BUsTQiaYpcKQk
+OAu9KkTxQkB4Bc6nVw3u6gR3iHwUK4cGjA/LSZdoVQ3ChIk77Hmrg2/NsdmF5Na7
+Q22vdskBPqYOwuFwdRVX/TX+BdCfWSeZXV0=
+-----END CERTIFICATE REQUEST-----
+
+Create a CertificateSigningRequest object with the name akshay with the contents of the akshay.csr file
+
+As of kubernetes 1.19, the API to use for CSR is certificates.k8s.io/v1.
+
+Please note that an additional field called signerName should also be added when creating CSR. For client authentication to the API server we will use the built-in signer kubernetes.io/kube-apiserver-client.
+
+CheckCompleteIncomplete
+
+
+	
+cat akshay.csr | base64 | tr -d "\n"
+LS0tLS1CRUdJTiBDRVJUSUZJQ0FURSBSRVFVRVNULS0tLS0KTUlJQ1ZqQ0NBVDRDQVFBd0VURVBNQTBHQTFVRUF3d0dZV3R6YUdGNU1JSUJJakFOQmdrcWhraUc5dzBCQVFFRgpBQU9DQVE4QU1JSUJDZ0tDQVFFQXhoNEhlU3JsVHVSWXZndm1rZjROdXFWUFpvRmVoS1hQb3RHa0czMHBNa3RDCnZ4V2tRK2F4UUc4Mm9NRjM4UVFOeExkVmtiT2VtSTFkNEhWdHcxcHJrYTB6YTRIRnRqWnIwYzlzY3ZUZ1JaSnQKeklySEhXTzR2aU1PenNnK01jekVnSHVJM0VTMTZUbjFJczd5SVU5d0FqVWZSUWRlQk0xWGpWYTBPTGZPUlVIOAo1NG5CVThvRHExZUlzemVnZW9MelppRmQya2JnZEpSaE1sWkVlWmEwQk4rWm9NTGRkWGZjSjQ1OHQ3QnhxanNyCkx5RzhRdGIzOEFvY3NrVVd5Q3lpbll6STFHTE9wcEVBbGtMdDN4WkVwWDlPQmtDeC9lcmVaY3JuQWhDalFMQlIKaVpTYWU2QWhyd0xYMnZQcG9OL29qcDFxWXduVTJPZlh1VERRRUN5cnBRSURBUUFCb0FBd0RRWUpLb1pJaHZjTgpBUUVMQlFBRGdnRUJBR2lhdHlNaDdWUkhTYVcxMm1FZ1hMaDNPUXd6eWwxcUpyK3ZuN05BajNSZFJEM3JhMDNHCisrTmxTc2hVdGxhdjMyTHdGUUNZS2FQVE11SW9MUWR2bjBwQUxvMEhwMFNzdS9GQ1ZkY1hYVkVNaHRqNGNYZ1IKSlNrbVN1TzVHZzVUazAzdndDRGFidE8rMDEvb2lMQ1BXeDA3Z2FMU1l0MktzOEZFMThzUkxkZkZtanQyUHJzbQpHWEhyNmlWUWxtUW5uMHkwcjFNR1VncEtudFVrcnhYbU5DM2ZHK3c5Sm9ibnoxWGR4YTZCVXNUUWlhWXBjS1FrCk9BdTlLa1R4UWtCNEJjNm5WdzN1NmdSM2lId1VLNGNHakEvTFNaZG9WUTNDaElrNzdIbXJnMi9Oc2RtRjVOYTcKUTIydmRza0JQcVlPd3VGd2RSVlgvVFgrQmRDZldTZVpYVjA9Ci0tLS0tRU5EIENFUlRJRklDQVRFIFJFUVVFU1QtLS0tLQo=
+
+or
+
+cat akshay.csr | base64 -w 0
+
+akshray!
+
+apiVersion: certificates.k8s.io/v1
+kind: certificateSigningRequest
+metadata:
+  name: akshray
+spec:
+  groups:
+  - system:authenticated
+  usages:
+  - client auth
+  signerName: kubernetes.io/kube-apiserver-client
+  request: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURSBSRVFVRVNULS0tLS0KTUlJQ1ZqQ0NBVDRDQVFBd0VURVBNQTBHQTFVRUF3d0dZV3R6YUdGNU1JSUJJakFOQmdrcWhraUc5dzBCQVFFRgpBQU9DQVE4QU1JSUJDZ0tDQVFFQXhoNEhlU3JsVHVSWXZndm1rZjROdXFWUFpvRmVoS1hQb3RHa0czMHBNa3RDCnZ4V2tRK2F4UUc4Mm9NRjM4UVFOeExkVmtiT2VtSTFkNEhWdHcxcHJrYTB6YTRIRnRqWnIwYzlzY3ZUZ1JaSnQKeklySEhXTzR2aU1PenNnK01jekVnSHVJM0VTMTZUbjFJczd5SVU5d0FqVWZSUWRlQk0xWGpWYTBPTGZPUlVIOAo1NG5CVThvRHExZUlzemVnZW9MelppRmQya2JnZEpSaE1sWkVlWmEwQk4rWm9NTGRkWGZjSjQ1OHQ3QnhxanNyCkx5RzhRdGIzOEFvY3NrVVd5Q3lpbll6STFHTE9wcEVBbGtMdDN4WkVwWDlPQmtDeC9lcmVaY3JuQWhDalFMQlIKaVpTYWU2QWhyd0xYMnZQcG9OL29qcDFxWXduVTJPZlh1VERRRUN5cnBRSURBUUFCb0FBd0RRWUpLb1pJaHZjTgpBUUVMQlFBRGdnRUJBR2lhdHlNaDdWUkhTYVcxMm1FZ1hMaDNPUXd6eWwxcUpyK3ZuN05BajNSZFJEM3JhMDNHCisrTmxTc2hVdGxhdjMyTHdGUUNZS2FQVE11SW9MUWR2bjBwQUxvMEhwMFNzdS9GQ1ZkY1hYVkVNaHRqNGNYZ1IKSlNrbVN1TzVHZzVUazAzdndDRGFidE8rMDEvb2lMQ1BXeDA3Z2FMU1l0MktzOEZFMThzUkxkZkZtanQyUHJzbQpHWEhyNmlWUWxtUW5uMHkwcjFNR1VncEtudFVrcnhYbU5DM2ZHK3c5Sm9ibnoxWGR4YTZCVXNUUWlhWXBjS1FrCk9BdTlLa1R4UWtCNEJjNm5WdzN1NmdSM2lId1VLNGNHakEvTFNaZG9WUTNDaElrNzdIbXJnMi9Oc2RtRjVOYTcKUTIydmRza0JQcVlPd3VGd2RSVlgvVFgrQmRDZldTZVpYVjA9Ci0tLS0tRU5EIENFUlRJRklDQVRFIFJFUVVFU1QtLS0tLQo=
+   
+
+no matches for kind "certificateSigningRequest" in version "certificates.k8s.io/v1"
+ensure CRDs are installed first
+
+
+--> found the problem! this is sick its should be : - system:authenticated and not - system: authenticated ( see the space)
+
+cat <<EOF | kubectl apply -f -
+apiVersion: certificates.k8s.io/v1
+kind: CertificateSigningRequest
+metadata:
+  name: akshay
+spec:
+  request: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURSBSRVFVRVNULS0tLS0KTUlJQ1ZqQ0NBVDRDQVFBd0VURVBNQTBHQTFVRUF3d0dZVzVuWld4aE1JSUJJakFOQmdrcWhraUc5dzBCQVFFRgpBQU9DQVE4QU1JSUJDZ0tDQVFFQTByczhJTHRHdTYxakx2dHhWTTJSVlRWMDNHWlJTWWw0dWluVWo4RElaWjBOCnR2MUZtRVFSd3VoaUZsOFEzcWl0Qm0wMUFSMkNJVXBGd2ZzSjZ4MXF3ckJzVkhZbGlBNVhwRVpZM3ExcGswSDQKM3Z3aGJlK1o2MVNrVHF5SVBYUUwrTWM5T1Nsbm0xb0R2N0NtSkZNMUlMRVI3QTVGZnZKOEdFRjJ6dHBoaUlFMwpub1dtdHNZb3JuT2wzc2lHQ2ZGZzR4Zmd4eW8ybmlneFNVekl1bXNnVm9PM2ttT0x1RVF6cXpkakJ3TFJXbWlECklmMXBMWnoyalVnald4UkhCM1gyWnVVV1d1T09PZnpXM01LaE8ybHEvZi9DdS8wYk83c0x0MCt3U2ZMSU91TFcKcW90blZtRmxMMytqTy82WDNDKzBERHk5aUtwbXJjVDBnWGZLemE1dHJRSURBUUFCb0FBd0RRWUpLb1pJaHZjTgpBUUVMQlFBRGdnRUJBR05WdmVIOGR4ZzNvK21VeVRkbmFjVmQ1N24zSkExdnZEU1JWREkyQTZ1eXN3ZFp1L1BVCkkwZXpZWFV0RVNnSk1IRmQycVVNMjNuNVJsSXJ3R0xuUXFISUh5VStWWHhsdnZsRnpNOVpEWllSTmU3QlJvYXgKQVlEdUI5STZXT3FYbkFvczFqRmxNUG5NbFpqdU5kSGxpT1BjTU1oNndLaTZzZFhpVStHYTJ2RUVLY01jSVUyRgpvU2djUWdMYTk0aEpacGk3ZnNMdm1OQUxoT045UHdNMGM1dVJVejV4T0dGMUtCbWRSeEgvbUNOS2JKYjFRQm1HCkkwYitEUEdaTktXTU0xMzhIQXdoV0tkNjVoVHdYOWl4V3ZHMkh4TG1WQzg0L1BHT0tWQW9FNkpsYWFHdTlQVmkKdjlOSjVaZlZrcXdCd0hKbzZXdk9xVlA3SVFjZmg3d0drWm89Ci0tLS0tRU5EIENFUlRJRklDQVRFIFJFUVVFU1QtLS0tLQo=
+  signerName: kubernetes.io/kube-apiserver-client
+  expirationSeconds: 86400  # one day
+  usages:
+  - client auth
+EOF
+
+
+controlplane ~ ➜  k get csr
+NAME        AGE   SIGNERNAME                                    REQUESTOR                  REQUESTEDDURATION   CONDITION
+akshay      40s   kubernetes.io/kube-apiserver-client           kubernetes-admin           24h                 Pending
+csr-9hff7   41m   kubernetes.io/kube-apiserver-client-kubelet   system:node:controlplane   <none>              App
+
+
+controlplane ~ ➜  k certificate approve akshay
+certificatesigningrequest.certificates.k8s.io/akshay approved
+
+
+controlplane ~ ➜  k get csr agent-smith -o YAML 
+apiVersion: certificates.k8s.io/v1
+kind: CertificateSigningRequest
+metadata:
+  creationTimestamp: "2022-11-09T02:09:18Z"
+  name: agent-smith
+  resourceVersion: "3621"
+  uid: 5d725422-cfe3-4d22-8086-d3b93418481d
+spec:
+  groups:
+  - system:masters
+  - system:authenticated
+  request: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURSBSRVFVRVNULS0tLS0KTUlJQ1dEQ0NBVUFDQVFBd0V6RVJNQThHQTFVRUF3d0libVYzTFhWelpYSXdnZ0VpTUEwR0NTcUdTSWIzRFFFQgpBUVVBQTRJQkR3QXdnZ0VLQW9JQkFRRE8wV0pXK0RYc0FKU0lyanBObzV2UklCcGxuemcrNnhjOStVVndrS2kwCkxmQzI3dCsxZUVuT041TXVxOTlOZXZtTUVPbnJEVU8vdGh5VnFQMncyWE5JRFJYall5RjQwRmJtRCs1eld5Q0sKeTNCaWhoQjkzTUo3T3FsM1VUdlo4VEVMcXlhRGtuUmwvanYvU3hnWGtvazBBQlVUcFdNeDRCcFNpS2IwVSt0RQpJRjVueEF0dE1Wa0RQUTdOYmVaUkc0M2IrUVdsVkdSL3o2RFdPZkpuYmZlek90YUF5ZEdMVFpGQy93VHB6NTJrCkVjQ1hBd3FDaGpCTGt6MkJIUFI0Sjg5RDZYYjhrMzlwdTZqcHluZ1Y2dVAwdEliT3pwcU52MFkwcWRFWnB3bXcKajJxRUwraFpFV2trRno4MGxOTnR5VDVMeE1xRU5EQ25JZ3dDNEdaaVJHYnJBZ01CQUFHZ0FEQU5CZ2txaGtpRwo5dzBCQVFzRkFBT0NBUUVBUzlpUzZDMXV4VHVmNUJCWVNVN1FGUUhVemFsTnhBZFlzYU9SUlFOd0had0hxR2k0CmhPSzRhMnp5TnlpNDRPT2lqeWFENnRVVzhEU3hrcjhCTEs4S2czc3JSRXRKcWw1ckxaeTlMUlZyc0pnaEQ0Z1kKUDlOTCthRFJTeFJPVlNxQmFCMm5XZVlwTTVjSjVURjUzbGVzTlNOTUxRMisrUk1uakRRSjdqdVBFaWM4L2RoawpXcjJFVU02VWF3enlrcmRISW13VHYybWxNWTBSK0ROdFYxWWllKzBIOS9ZRWx0K0ZTR2poNUw1WVV2STFEcWl5CjRsM0UveTNxTDcxV2ZBY3VIM09zVnBVVW5RSVNNZFFzMHFXQ3NiRTU2Q0M1RGhQR1pJcFVibktVcEF3a2ErOEUKdndRMDdqRytocGtueG11RkFlWHhnVXdvZEFMYUo3anUvVERJY3c9PQotLS0tLUVORCBDRVJUSUZJQ0FURSBSRVFVRVNULS0tLS0K
+  signerName: kubernetes.io/kube-apiserver-client
+  usages:
+  - digital signature
+  - key encipherment
+  - server auth
+  username: agent-x
+status: {}
+
+
+controlplane ~ ➜  k certificate deny agent-smith
+certificatesigningrequest.certificates.k8s.io/agent-smith denied
+
+controlplane ~ ➜  k delete csr agent-smith 
+certificatesigningrequest.certificates.k8s.io "agent-smith" deleted
+------------------
+
+KUBECONFIG
+
+kubectl get pods --server my-kube-playground:6443 --client-key admin.key --client-certificate admin.crt --certificate-authority ca.crt 
+
+KubeConfig File
+
+$HOME/.kube/config 
+
+Clusters -- Development, Production, Google
+Contexts -- Admin@Production, Dev@Google
+Users    -- Admin, Dev User, Prod User
+
+
+apiVersion: v1
+kind: Config
+
+clusters:
+- name: my-kube-playground
+  clusters:
+    certificate-authority:
+    server: https://my-kube-playground:6443
+
+contexts:
+
+- name: my-kube-admin@my-kube-playground
+  context:
+    cluster: my-kube-playground
+    user:
+          my-kube-admin
+
+users:
+- name: my-kube-admin
+  user:
+     client-certificate: admin.crt
+     client-key: admin.key
+
+-----------------------------------------
+
+
+
+apiVersion: v1
+kind: Config
+
+current-context: dev-user@google
+
+clusters:
+
+- name: my-kube-playground
+- name: development
+- name: production
+- name: google
+
+contexts:
+- name: my-kube-admin@my-kube-playground
+- name: dev-user@google
+- name: prod-user@production
+
+users:
+- name: my-kube-admin
+- name: admin
+- name: dev-user
+- name: prod-user
+
+----------------------
+
+kubectl config view 
+
+kubectl config use-context prod-user@production 
+
+kubectl config -h
+
+Certificates in KubeConfig:
+
+cat ca.crt | base64
+
+
+apiVersion: v1
+kind: Config
+
+clusters:
+- name: Production
+  cluster:
+    certificate-authority= /etc/kubernetes/pki/ca.crt
+    or
+    certificate-authority-data= LS01ufuuuu
+
+
+--------------------
+
+
+controlplane ~ ➜  cat my-kube-config
+apiVersion: v1
+kind: Config
+
+clusters:
+- name: production
+  cluster:
+    certificate-authority: /etc/kubernetes/pki/ca.crt
+    server: https://controlplane:6443
+
+- name: development
+  cluster:
+    certificate-authority: /etc/kubernetes/pki/ca.crt
+    server: https://controlplane:6443
+
+- name: kubernetes-on-aws
+  cluster:
+    certificate-authority: /etc/kubernetes/pki/ca.crt
+    server: https://controlplane:6443
+
+- name: test-cluster-1
+  cluster:
+    certificate-authority: /etc/kubernetes/pki/ca.crt
+    server: https://controlplane:6443
+
+contexts:
+- name: test-user@development
+  context:
+    cluster: development
+    user: test-user
+
+- name: aws-user@kubernetes-on-aws
+  context:
+    cluster: kubernetes-on-aws
+    user: aws-user
+
+- name: test-user@production
+  context:
+    cluster: production
+    user: test-user
+
+- name: research
+  context:
+    cluster: test-cluster-1
+    user: dev-user
+
+users:
+- name: test-user
+  user:
+    client-certificate: /etc/kubernetes/pki/users/test-user/test-user.crt
+    client-key: /etc/kubernetes/pki/users/test-user/test-user.key
+- name: dev-user
+  user:
+    client-certificate: /etc/kubernetes/pki/users/dev-user/developer-user.crt
+    client-key: /etc/kubernetes/pki/users/dev-user/dev-user.key
+- name: aws-user
+  user:
+    client-certificate: /etc/kubernetes/pki/users/aws-user/aws-user.crt
+    client-key: /etc/kubernetes/pki/users/aws-user/aws-user.key
+
+current-context: test-user@development
+preferences: {}
+
+
+I would like to use the dev-user to access test-cluster-1. Set the current context to the right one so I can do that.
+
+Once the right context is identified, use the kubectl config use-context command
+
+-->  kubectl config --kubeconfig=/root/my-kube-config use-context research 
+-->  kubectl config --kubeconfig=/root/my-kube-config current-context
+
+We don't want to have to specify the kubeconfig file option on each command. Make the my-kube-config file the default kubeconfig.
+
+copy and paste the config file into the default file $HOME/.kube/config
+
+
+Persistent Key/Value Store
+We have already seen how to secure the ETCD key/value store using TLS certificates in the previous videos. Towards the end of this course, when we setup an actual cluster from scratch we will see this in action.
+
+
+-------------------------------------------
+
+API GROUPS
+
+curl https://kube-master:6443/version
+
+--core
+curl https://kube-master:6443/api/v1/pods-namespaces-events-endpoints-secrets-PV-PVC-services-configmaps-bindings-events-nodes-rc
+
+/API - core
+/metrics /healthz /version /api /apis  /logs
+
+
+--named
+/APIS
+
+
+/apps  /extensions /networking.k8s.io /storage.k8s.io /authentication.k8s.io  /certificates.k8s.io 
+
+/v1
+
+resources
+--> /deployments
+--> /replicasets
+--> /statefulsets  --> list, get, create,delete,update,watch
+
+
+
+controlplane $ curl https://controlplane:6443 -k     
+{
+  "kind": "Status",
+  "apiVersion": "v1",
+  "metadata": {},
+  "status": "Failure",
+  "message": "forbidden: User \"system:anonymous\" cannot get path \"/\"",
+  "reason": "Forbidden",
+  "details": {},
+  "code": 403
+}
+
+you cant access directly without authentications
+
+controlplane $ curl https://controlplane:6443 -k --key /etc/kubernetes/pki/ca.key --
+
+curl https://controlplane:6443 -k --key admin.key --cert admin.crt --cacert ca.crt
+or
+
+kubectl proxy 
+ 
