@@ -3166,3 +3166,473 @@ kubectl create secret docker-registry private-reg-cred --docker-username=dock_us
 k edit deployment web
 
 put imagePullSecrets first thing spec 
+
+---------------------
+
+docker security 
+docker run ubuntu sleep 1000
+process isolation 
+as default docker runs as root
+
+if not wanting to use root use 
+docker run --user=1000 ubuntu sleep 3600
+
+or set it at docker file level
+
+docker build -t my-ubuntu-image .
+
+FROM ubuntu
+
+USER 1000
+
+security context  to be set at container level or pod level 
+if set at pod level, setting will be used by all containers
+if you set it at both, setting at container will override the one set at pod level
+
+
+-- pod level security context
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: redis
+  labels:
+    app: redis
+    type: backend
+spec:
+  securityContext:
+    runAsUser: 1000
+  containers:
+    - name: redis
+      image: redis
+
+
+
+-- container level security context
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: redis
+  labels:
+    app: redis
+    type: backend
+spec:
+  containers:
+    - name: redis
+      image: redis
+      securityContext:
+        runAsUser: 1000
+        capabilities:
+            add: ["MAC_ADMIN"]
+
+
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ubuntu-sleeper
+  namespace: default
+spec:
+  securityContext:
+    runAsUser: 1010
+  containers:
+  - command:
+    - sleep
+    - "4800"
+    image: ubuntu
+    name: ubuntu-sleeper
+
+
+example of container sec context overriding pod level
+
+controlplane ~ ➜  cat multi-pod.yaml 
+apiVersion: v1
+kind: Pod
+metadata:
+  name: multi-pod
+spec:
+  securityContext:
+    runAsUser: 1001
+  containers:
+  -  image: ubuntu
+     name: web
+     command: ["sleep", "5000"]
+     securityContext:
+      runAsUser: 1002
+
+  -  image: ubuntu
+     name: sidecar
+     command: ["sleep", "5000"]
+
+
+
+--- Update pod ubuntu-sleeper to run as Root user and with the SYS_TIME capability.
+
+Note: Only make the necessary changes. Do not modify the name of the pod.
+
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ubuntu-sleeper
+  namespace: default
+spec:
+  containers:
+  - command:
+    - sleep
+    - "4800"
+    image: ubuntu
+    name: ubuntu-sleeper
+    securityContext:
+      capabilities:
+        add: ["SYS_TIME"]
+
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ubuntu-sleeper
+  namespace: default
+spec:
+  containers:
+  - command:
+    - sleep
+    - "4800"
+    image: ubuntu
+    name: ubuntu-sleeper
+    securityContext:
+      capabilities:
+          add: ["SYS_TIME", "NET_ADMIN"]
+
+
+-------------------
+
+network policy 
+
+allow ingress traffic from api pod on port 3306
+
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: test-network-policy
+  namespace: default
+spec:
+  podSelector:
+    matchLabels:
+      role: db
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - ipBlock:
+            cidr: 172.17.0.0/16
+            except:
+              - 172.17.1.0/24
+        - namespaceSelector:
+            matchLabels:
+              project: myproject
+        - podSelector:
+            matchLabels:
+              role: frontend
+      ports:
+        - protocol: TCP
+          port: 6379
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/24
+      ports:
+        - protocol: TCP
+          port: 5978
+
+
+Note: POSTing this to the API server for your cluster will have no effect unless your chosen networking solution supports network policy.
+
+
+Default policies
+By default, if no policies exist in a namespace, then all ingress and egress traffic is allowed to and from pods in that namespace. The following examples let you change the default behavior in that namespace.
+
+Default deny all ingress traffic
+
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+
+
+Allow all ingress traffic 
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-all-ingress
+spec:
+  podSelector: {}
+  ingress:
+  - {}
+  policyTypes:
+  - Ingress
+
+
+Default deny all egress traffic
+
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-egress
+spec:
+  podSelector: {}
+  policyTypes:
+  - Egress
+
+
+Allow all egress traffic
+
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-all-egress
+spec:
+  podSelector: {}
+  egress:
+  - {}
+  policyTypes:
+  - Egress
+
+
+Default deny all ingress and all egress traffic
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+
+
+when defining ingress rule from API pod to db pod, egress result is allowed for response
+however db pod cant initiate egress connections by itself to api pod. 
+
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: db-policy
+  
+spec:
+  podSelector:
+    matchLabels:
+      role: db
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+      - podSelector:
+            matchLabels:
+               name: api-pod
+        namespaceSelector:
+            matchLabels:
+               name: prod
+      - ipBlock:
+            cidr: 192.168.5.10/32 -- backupserver
+    ports:
+    - protocol: TCP
+      port: 3306
+    
+
+in case of agent pushing data from pod to back up server
+
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: db-policy
+  
+spec:
+  podSelector:
+    matchLabels:
+      role: db
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+  - from:
+    - podSelector:
+         matchLabels:
+           name: api-pod
+    ports:
+    - protocol: TCP
+      port: 3306
+     
+  egress:
+  - to:
+    - ipBlock:
+          cidr: 192.168.5.10/32
+    
+    ports:
+    - protocol: TCP
+      port: 80
+    
+
+----------------
+
+k get networkpolicy
+
+
+
+Create a network policy to allow traffic from the Internal application only to the payroll-service and db-service.
+
+Use the spec given below. You might want to enable ingress traffic to the pod to test your rules in the UI.
+
+
+Note: We have also allowed Egress traffic to TCP and UDP port. This has been added to ensure that the internal DNS resolution works from the internal pod. Remember: The kube-dns service is exposed on port 53:
+
+root@controlplane:~# kubectl get svc -n kube-system 
+NAME       TYPE        CLUSTER-IP   EXTERNAL-IP   PORT(S)                  AGE
+kube-dns   ClusterIP   10.96.0.10   <none>        53/UDP,53/TCP,9153/TCP   93m
+
+
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: internal-policy
+  namespace: default 
+spec:
+  podSelector:
+    matchLabels:
+      name: internal
+  policyTypes:
+    - Egress
+    - Ingress
+
+  ingress:
+  - {}
+  egress:
+  - to:
+    - podSelector:
+         matchLabels:
+           name: mysql
+    ports:
+    - protocol: TCP
+      port: 3306
+
+  - to:
+    - podSelector:
+         matchLabels:
+           name: payroll
+    ports:       
+    - protocol: TCP
+      port : 8080
+
+  - ports:
+    - port: 53
+      protocol: UDP
+    - port: 53
+      protocol: TCP
+
+
+
+Kubectx and Kubens – Command line Utilities
+Through out the course, you have had to work on several different namespaces in the practice lab environments. In some labs, you also had to switch between several contexts.
+
+
+
+While this is excellent for hands-on practice, in a real “live” kubernetes cluster implemented for production, there could be a possibility of often switching between a large number of namespaces and clusters.
+
+
+
+This can quickly become and confusing and overwhelming task if you had to rely on kubectl alone.
+
+
+
+This is where command line tools such as kubectx and kubens come in to picture.
+
+
+
+Reference: https://github.com/ahmetb/kubectx
+
+
+
+Kubectx:
+
+With this tool, you don't have to make use of lengthy “kubectl config” commands to switch between contexts. This tool is particularly useful to switch context between clusters in a multi-cluster environment.
+
+
+
+Installation:
+
+sudo git clone https://github.com/ahmetb/kubectx /opt/kubectx
+sudo ln -s /opt/kubectx/kubectx /usr/local/bin/kubectx
+
+
+Syntax:
+
+To list all contexts:
+
+kubectx
+
+
+
+To switch to a new context:
+
+kubectx <context_name>
+
+
+
+To switch back to previous context:
+
+kubectx -
+
+
+
+To see current context:
+
+kubectx -c
+
+
+
+
+
+Kubens:
+
+This tool allows users to switch between namespaces quickly with a simple command.
+
+Installation:
+
+sudo git clone https://github.com/ahmetb/kubectx /opt/kubectx
+sudo ln -s /opt/kubectx/kubens /usr/local/bin/kubens
+
+
+Syntax:
+
+To switch to a new namespace:
+
+kubens <new_namespace>
+
+
+
+To switch back to previous namespace:
+
+kubens -
