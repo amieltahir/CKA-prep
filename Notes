@@ -3599,6 +3599,89 @@ in kubelet conf
 --cni-bin-dir=/etc/cni/bin
 ./net-script.sh add container namespace 
 
+CNI IPAM
+- host-local
+- DHCP 
+
+kube-proxy - ipvs, userspace, iptables(default)
+
+to check cluster ip range --> ps -ef | grep kube-api 
+to check pod cluster ip range --> check weave pods logs - kubectl logs weave_pod -n kube-system
+to check service cluster ip range --> ps -ef | grep kube-api
+Determine kube proxy type by --> kubectl logs kube-proxy-pod -n kube-system
+to determine how k8s cluster ensures each node has a proxy-pod, check proxy pods desc --> daemonsets
+
+---------------
+
+DNS 
+
+K8s setups internal DNS by default to resolve pod names, and service names
+if you setup K8s manually, u have to set it up yourself
+
+KubeDNS example
+two pods and a service
+https://github.com/amieltahir
+10.244.1.5    test-pod
+
+10.244.2.5     web-pod
+10.107.37.188  web-service
+
+when we create a service, DNS creates a record for it now we can access from any pod because they are in same namespace --> curl https://web-service 
+if we create a namespace (apps) for web service and web-pod then we can access it --> curl http://web-service.apps
+
+hostname: web-service   
+type: svc  
+ip_address: 10.107.37.188
+namespace: apps
+root: cluser.local
+
+curl http://web-service.apps.svc.cluster.local
+
+hostname: 10.244.2.5 
+type: pod
+namespace: apps
+root: cluster.local
+ip_address: 10.244.2.5 
+
+hostname: 10.244.1.5
+type: pod
+namespace: default
+root: cluster.local
+ip_address: 10.244.1.5
+
+--------
+
+CoreDNS kubernetes
+
+we move all /etc/hosts enrties to centralized DNS server ( 10.96.0.10) and add dns IP address on each pod /etc/resolv.conf  ----> KUBE_DNS
+after version 12 we recommend using CoreDNS
+We run CoreDNS as a pod on a replica set as part of deployment and its runs core dns executable ./CoreDNS
+
+CoreDNS conf --> /etc/coreDNS/corefile
+
+this file is passed as config map object, if we need to modify it we modify the coredns config map
+kubectl get configmap -n kube-system --> coredns
+
+also deploys a kube-dns service, type clusterIP
+kubectl get svc -n kube-system 
+
+to get IP configured for CoreDNS check -->  /var/lib/kubelet/config.yaml
+to nslookup service from pod -->   kubectl exec -it hr -- nslookup mysql.service > /root/cka/nslooup.out 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
